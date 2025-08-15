@@ -98,3 +98,112 @@
     false
   )
 )
+
+;; Validate active proposal state
+(define-private (is-active-proposal (proposal-id uint))
+  (match (map-get? proposals proposal-id)
+    proposal (and
+      (< stacks-block-height (get expires-at proposal))
+      (is-eq (get status proposal) "active")
+    )
+    false
+  )
+)
+
+;; Proposal existence validation
+(define-private (is-valid-proposal-id (proposal-id uint))
+  (match (map-get? proposals proposal-id)
+    proposal
+    true
+    false
+  )
+)
+
+;; Collaboration existence validation
+(define-private (is-valid-collaboration-id (collaboration-id uint))
+  (match (map-get? collaborations collaboration-id)
+    collaboration
+    true
+    false
+  )
+)
+
+;; Calculate member's voting influence based on reputation and stake
+(define-private (calculate-voting-power (user principal))
+  (let (
+      (member-data (unwrap! (map-get? members user) u0))
+      (reputation (get reputation member-data))
+      (stake (get stake member-data))
+    )
+    (+ (* reputation u10) stake)
+  )
+)
+
+;; Update member reputation with activity tracking
+(define-private (update-member-reputation
+    (user principal)
+    (change int)
+  )
+  (match (map-get? members user)
+    member-data (let (
+        (new-reputation (to-uint (+ (to-int (get reputation member-data)) change)))
+        (updated-data (merge member-data {
+          reputation: new-reputation,
+          last-interaction: stacks-block-height,
+        }))
+      )
+      (map-set members user updated-data)
+      (ok new-reputation)
+    )
+    ERR-NOT-MEMBER
+  )
+)
+
+;; MEMBERSHIP MANAGEMENT FUNCTIONS
+
+;; Join the governance community
+(define-public (join-dao)
+  (let ((caller tx-sender))
+    (asserts! (not (is-member caller)) ERR-ALREADY-MEMBER)
+    (map-set members caller {
+      reputation: u1,
+      stake: u0,
+      last-interaction: stacks-block-height,
+    })
+    (var-set total-members (+ (var-get total-members) u1))
+    (ok true)
+  )
+)
+
+;; Leave the governance community
+(define-public (leave-dao)
+  (let ((caller tx-sender))
+    (asserts! (is-member caller) ERR-NOT-MEMBER)
+    (map-delete members caller)
+    (var-set total-members (- (var-get total-members) u1))
+    (ok true)
+  )
+)
+
+;; Stake tokens to increase voting power
+(define-public (stake-tokens (amount uint))
+  (let ((caller tx-sender))
+    (asserts! (is-member caller) ERR-NOT-MEMBER)
+    (asserts! (> amount u0) ERR-INVALID-AMOUNT)
+    (try! (stx-transfer? amount caller (as-contract tx-sender)))
+    (match (map-get? members caller)
+      member-data (let (
+          (new-stake (+ (get stake member-data) amount))
+          (updated-data (merge member-data {
+            stake: new-stake,
+            last-interaction: stacks-block-height,
+          }))
+        )
+        (map-set members caller updated-data)
+        (var-set treasury-balance (+ (var-get treasury-balance) amount))
+        (ok new-stake)
+      )
+      ERR-NOT-MEMBER
+    )
+  )
+)
