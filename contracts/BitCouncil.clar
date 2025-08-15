@@ -410,3 +410,84 @@
     (ok true)
   )
 )
+
+;; CROSS-COMMUNITY COLLABORATION FUNCTIONS
+
+;; Propose collaboration with another DAO
+(define-public (propose-collaboration
+    (partner-dao principal)
+    (proposal-id uint)
+  )
+  (let (
+      (caller tx-sender)
+      (collaboration-id (+ (var-get total-proposals) u1))
+    )
+    (asserts! (is-member caller) ERR-NOT-MEMBER)
+    (asserts! (is-active-proposal proposal-id) ERR-INVALID-PROPOSAL)
+    (asserts! (not (is-eq partner-dao caller)) ERR-INVALID-PROPOSAL)
+    (map-set collaborations collaboration-id {
+      partner-dao: partner-dao,
+      proposal-id: proposal-id,
+      status: "proposed",
+    })
+    (var-set total-proposals collaboration-id)
+    (ok collaboration-id)
+  )
+)
+
+;; Accept collaboration proposal
+(define-public (accept-collaboration (collaboration-id uint))
+  (let ((caller tx-sender))
+    (asserts! (is-valid-collaboration-id collaboration-id) ERR-INVALID-PROPOSAL)
+    (match (map-get? collaborations collaboration-id)
+      collaboration (begin
+        (asserts! (is-eq caller (get partner-dao collaboration))
+          ERR-NOT-AUTHORIZED
+        )
+        (asserts! (is-eq (get status collaboration) "proposed")
+          ERR-INVALID-PROPOSAL
+        )
+        ;; Add additional validation before setting status
+        (asserts! (is-valid-collaboration-id collaboration-id)
+          ERR-INVALID-PROPOSAL
+        )
+        (map-set collaborations collaboration-id
+          (merge collaboration { status: "accepted" })
+        )
+        (ok true)
+      )
+      ERR-INVALID-PROPOSAL
+    )
+  )
+)
+
+;; PUBLIC READ-ONLY FUNCTIONS
+
+;; Get proposal details
+(define-read-only (get-proposal (proposal-id uint))
+  (ok (unwrap! (map-get? proposals proposal-id) ERR-INVALID-PROPOSAL))
+)
+
+;; Get member details
+(define-read-only (get-member (user principal))
+  (ok (unwrap! (map-get? members user) ERR-NOT-MEMBER))
+)
+
+;; Get total member count
+(define-read-only (get-total-members)
+  (ok (var-get total-members))
+)
+
+;; Get total proposal count
+(define-read-only (get-total-proposals)
+  (ok (var-get total-proposals))
+)
+
+;; CONTRACT INITIALIZATION
+
+;; Initialize contract state variables
+(begin
+  (var-set total-members u0)
+  (var-set total-proposals u0)
+  (var-set treasury-balance u0)
+)
